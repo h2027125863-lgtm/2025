@@ -1,0 +1,602 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2025年农村火灾环形气泡图</title>
+
+<style>
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-height: 100%;
+  background: transparent !important;
+}
+
+body {
+  display: grid;
+  place-items: center;
+  overflow-x: hidden;
+}
+
+#chartBox {
+  position: relative;
+  width: min(100%, 740px);
+  aspect-ratio: 1000 / 1080;
+  background: transparent !important;
+  font-family: "Microsoft YaHei", sans-serif;
+}
+
+svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: transparent !important;
+}
+
+/* 环形图交互 */
+.sector {
+  cursor: pointer;
+  stroke: #f3e6d9;
+  stroke-opacity: .65;
+  stroke-width: 1.5;
+  transition:
+    filter .2s ease,
+    stroke-width .2s ease,
+    opacity .2s ease;
+}
+
+.sector:hover,
+.sector:focus-visible {
+  filter: drop-shadow(
+    0 0 11px rgba(255,191,133,.65)
+  );
+  stroke: #fff2df;
+  stroke-width: 4;
+  outline: none;
+}
+
+/* 外围气泡呼吸动画 */
+.bubble {
+  pointer-events: none;
+  animation: breathe 3.5s ease-in-out
+    infinite alternate;
+  animation-delay: var(--delay);
+}
+
+@keyframes breathe {
+  from {
+    opacity: .28;
+  }
+  to {
+    opacity: .62;
+  }
+}
+
+/* 环形图淡入 */
+#rings {
+  animation: ringAppear 1.2s ease-out both;
+}
+
+@keyframes ringAppear {
+  from {
+    opacity: 0;
+    transform: scale(.85);
+    transform-origin: 500px 525px;
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+    transform-origin: 500px 525px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bubble,
+  #rings {
+    animation: none;
+  }
+}
+
+/* 鼠标悬浮提示 */
+#tooltip {
+  position: absolute;
+  z-index: 5;
+  display: none;
+  min-width: 170px;
+  padding: 12px 14px;
+  color: #ffebda;
+  background: rgba(24,33,40,.96);
+  border: 1px solid rgba(242,205,171,.35);
+  border-radius: 10px;
+  font: 14px/1.75 "Microsoft YaHei", sans-serif;
+  pointer-events: none;
+  transform: translate(-50%, -120%);
+}
+
+#tooltip.on {
+  display: block;
+}
+
+#tooltip strong {
+  color: #ffceaa;
+  font-size: 16px;
+}
+</style>
+</head>
+
+<body>
+
+<div id="chartBox">
+
+  <svg
+    id="chart"
+    viewBox="0 0 1000 1080"
+    xmlns="http://www.w3.org/2000/svg"
+    aria-label="2025年农村火灾起数和死亡人数占比"
+  >
+    <g id="grid"></g>
+    <g id="bubbles"></g>
+    <g id="rings"></g>
+    <g id="texts"></g>
+  </svg>
+
+  <div id="tooltip"></div>
+
+</div>
+
+<script>
+(() => {
+"use strict";
+
+// ================================
+// 一、基本设置
+// ================================
+
+const NS = "http://www.w3.org/2000/svg";
+
+const box = document.getElementById("chartBox");
+const grid = document.getElementById("grid");
+const bubbles = document.getElementById("bubbles");
+const rings = document.getElementById("rings");
+const texts = document.getElementById("texts");
+const tooltip = document.getElementById("tooltip");
+
+const cx = 500;
+const cy = 525;
+
+// ================================
+// 二、2025年火灾数据
+// ================================
+
+const groups = [
+  {
+    type: "火灾起数",
+    place: "农村地区",
+    value: "51.6万起",
+    share: 61.4,
+    color: "#D39B7B",
+    inner: 235,
+    outer: 280
+  },
+  {
+    type: "火灾起数",
+    place: "其他地区",
+    value: "32.5万起",
+    share: 38.6,
+    color: "#8397A0",
+    inner: 235,
+    outer: 280
+  },
+  {
+    type: "死亡人数",
+    place: "农村地区",
+    value: "949人",
+    share: 51.9,
+    color: "#E6BB92",
+    inner: 168,
+    outer: 212
+  },
+  {
+    type: "死亡人数",
+    place: "其他地区",
+    value: "878人",
+    share: 48.1,
+    color: "#9CABB2",
+    inner: 168,
+    outer: 212
+  }
+];
+
+// ================================
+// 三、SVG绘图工具
+// ================================
+
+function svgEl(tag, attrs = {}, text = "") {
+  const el = document.createElementNS(NS, tag);
+
+  Object.entries(attrs).forEach(([key, value]) => {
+    el.setAttribute(key, value);
+  });
+
+  if (text) {
+    el.textContent = text;
+  }
+
+  return el;
+}
+
+// 极坐标转换
+function polar(r, deg) {
+  const rad = deg * Math.PI / 180;
+
+  return {
+    x: cx + r * Math.sin(rad),
+    y: cy - r * Math.cos(rad)
+  };
+}
+
+// 环形扇区路径
+function sectorPath(inner, outer, start, end) {
+
+  const a = polar(outer, start);
+  const b = polar(outer, end);
+  const c = polar(inner, end);
+  const d = polar(inner, start);
+
+  const large = end - start > 180 ? 1 : 0;
+
+  return `
+    M ${a.x} ${a.y}
+    A ${outer} ${outer} 0 ${large} 1
+      ${b.x} ${b.y}
+    L ${c.x} ${c.y}
+    A ${inner} ${inner} 0 ${large} 0
+      ${d.x} ${d.y}
+    Z
+  `;
+}
+
+// 添加文字
+function label(
+  x, y, text, size, color,
+  weight = "normal"
+) {
+
+  texts.appendChild(
+    svgEl("text", {
+      x,
+      y,
+      "text-anchor": "middle",
+      "font-size": size,
+      fill: color,
+      "font-weight": weight
+    }, text)
+  );
+}
+
+// ================================
+// 四、绘制辅助圆
+// ================================
+
+[303, 340, 378, 418].forEach(r => {
+
+  grid.appendChild(
+    svgEl("circle", {
+      cx,
+      cy,
+      r,
+      fill: "none",
+      stroke: "#a7b5bc",
+      "stroke-dasharray": "2 10",
+      opacity: ".15"
+    })
+  );
+
+});
+
+// ================================
+// 五、外围动态气泡
+// ================================
+
+// 固定随机种子，使每次打开样式一致
+let seed = 2025;
+
+function rnd() {
+  seed = (
+    seed * 1664525 + 1013904223
+  ) >>> 0;
+
+  return seed / 4294967296;
+}
+
+// 农村地区配色
+const warm = [
+  "#D39B7B",
+  "#C69276",
+  "#E4C1A7",
+  "#A56F5E"
+];
+
+// 其他地区配色
+const cool = [
+  "#8397A0",
+  "#7A929B",
+  "#B5C6CA",
+  "#617C87"
+];
+
+// 创建560个装饰气泡
+for (let i = 0; i < 560; i++) {
+
+  const angle = rnd() * 360;
+
+  const radius = 300 + rnd() * 124;
+
+  const pos = polar(radius, angle);
+
+  // 根据61.4%的占比分配视觉色域
+  const colors =
+    angle < 221.04 ? warm : cool;
+
+  const color = colors[
+    Math.floor(rnd() * colors.length)
+  ];
+
+  const size =
+    1.7 + Math.pow(rnd(), 2.3) * 12;
+
+  const bubble = svgEl("circle", {
+    cx: pos.x.toFixed(2),
+    cy: pos.y.toFixed(2),
+    r: size.toFixed(2),
+    fill: color,
+
+    opacity: (
+      .23 + rnd() * .40
+    ).toFixed(2),
+
+    class: "bubble",
+
+    style:
+      `--delay:${(rnd() * 3.6).toFixed(2)}s`
+  });
+
+  bubbles.appendChild(bubble);
+}
+
+// ================================
+// 六、绘制双层环形图
+// ================================
+
+let start = 0;
+
+groups.forEach((item, index) => {
+
+  // 内环从正上方重新开始
+  if (index === 2) {
+    start = 0;
+  }
+
+  const end =
+    start + item.share * 3.6;
+
+  const path = svgEl("path", {
+    d: sectorPath(
+      item.inner,
+      item.outer,
+      start,
+      end
+    ),
+
+    fill: item.color,
+    "fill-opacity": ".9",
+
+    class: "sector",
+    tabindex: "0",
+
+    "aria-label":
+      `2025年${item.place}${item.type}` +
+      `${item.value}，占比${item.share}%`
+  });
+
+  rings.appendChild(path);
+
+  // ==============================
+  // 鼠标悬浮显示数据
+  // ==============================
+
+  function show(event) {
+
+    tooltip.innerHTML = `
+      <strong>2025年 · ${item.type}</strong>
+      <div>${item.place}：${item.value}</div>
+      <div>占比：${item.share}%</div>
+    `;
+
+    const bounds =
+      box.getBoundingClientRect();
+
+    const x =
+      event && Number.isFinite(event.clientX)
+        ? event.clientX - bounds.left
+        : bounds.width / 2;
+
+    const y =
+      event && Number.isFinite(event.clientY)
+        ? event.clientY - bounds.top
+        : bounds.height / 2;
+
+    tooltip.style.left =
+      Math.max(
+        100,
+        Math.min(bounds.width - 100, x)
+      ) + "px";
+
+    tooltip.style.top =
+      Math.max(
+        96,
+        Math.min(bounds.height - 30, y)
+      ) + "px";
+
+    tooltip.classList.add("on");
+  }
+
+  // 鼠标触发
+  path.addEventListener(
+    "pointerenter", show
+  );
+
+  path.addEventListener(
+    "pointermove", show
+  );
+
+  // 手机触摸触发
+  path.addEventListener(
+    "pointerdown", show
+  );
+
+  // 键盘交互
+  path.addEventListener(
+    "focus",
+    () => show(null)
+  );
+
+  // 离开时关闭提示
+  path.addEventListener(
+    "pointerleave",
+    () => tooltip.classList.remove("on")
+  );
+
+  path.addEventListener(
+    "blur",
+    () => tooltip.classList.remove("on")
+  );
+
+  start = end;
+});
+
+// ================================
+// 七、中央数据文字
+// ================================
+
+label(
+  500, 470,
+  "农村地区",
+  27,
+  "#f4e5d4",
+  "600"
+);
+
+label(
+  500, 531,
+  "61.4%",
+  57,
+  "#f6d1ae",
+  "700"
+);
+
+label(
+  500, 570,
+  "火灾起数占比",
+  20,
+  "#bdcbd2"
+);
+
+label(
+  500, 613,
+  "死亡人数占比 51.9%",
+  23,
+  "#f0cbaa"
+);
+
+// ================================
+// 八、年份及说明
+// ================================
+
+label(
+  500, 54,
+  "2025",
+  54,
+  "#f2dfce",
+  "600"
+);
+
+label(
+  500, 94,
+  "农村火灾 · 起数与死亡占比",
+  18,
+  "#c8d3d7"
+);
+
+// ================================
+// 九、图例
+// ================================
+
+function legend(x, y, color, text) {
+
+  texts.appendChild(
+    svgEl("circle", {
+      cx: x,
+      cy: y,
+      r: 8,
+      fill: color
+    })
+  );
+
+  texts.appendChild(
+    svgEl("text", {
+      x: x + 22,
+      y: y + 7,
+      fill: "#e9dbce",
+      "font-size": 19
+    }, text)
+  );
+}
+
+legend(
+  125, 985,
+  "#D39B7B",
+  "外环 · 火灾起数"
+);
+
+legend(
+  125, 1026,
+  "#E6BB92",
+  "内环 · 死亡人数"
+);
+
+legend(
+  600, 985,
+  "#D39B7B",
+  "农村地区"
+);
+
+legend(
+  600, 1026,
+  "#8397A0",
+  "其他地区"
+);
+
+// ================================
+// 十、关闭悬浮框
+// ================================
+
+box.addEventListener(
+  "pointerleave",
+  () => {
+    tooltip.classList.remove("on");
+  }
+);
+
+})();
+</script>
+
+</body>
+</html>
